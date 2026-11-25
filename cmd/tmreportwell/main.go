@@ -191,7 +191,7 @@ func report(c *Config, s *State, now time.Time, logErr error) (Report, *TMState)
 		WarnDays: c.WarnDays, BadDays: c.BadDays}), st
 }
 
-func cmdReport() error {
+func cmdReport(html bool) error {
 	c, err := loadConfig()
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
@@ -203,6 +203,10 @@ func cmdReport() error {
 	}
 	logErr := s.collect(now)
 	r, _ := report(c, s, now, logErr)
+	if html {
+		fmt.Print(r.HTML)
+		return nil
+	}
 	fmt.Printf("Subject: %s\n\n%s", r.Subject, r.Body)
 	return nil
 }
@@ -301,7 +305,9 @@ func main() {
 	case "--version", "-V":
 		fmt.Println("tmreportwell", version)
 	case "report":
-		err = cmdReport()
+		err = cmdReport(false)
+	case "html":
+		err = cmdReport(true)
 	case "run":
 		err = cmdRun(false)
 	case "send":
@@ -314,6 +320,7 @@ func main() {
 		fmt.Fprint(os.Stderr, `usage: tmreportwell <command>
 
   report     print the report, change nothing
+  html       print the report as the HTML page the mail carries
   run        collect log messages, mail the report if it is due
   send       collect log messages, mail the report now
   install    run hourly as a launch agent

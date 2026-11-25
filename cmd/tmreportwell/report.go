@@ -8,12 +8,29 @@ import (
 )
 
 // Report is the rendered mail.
-type Report struct{ Subject, Body string }
+type Report struct{ Subject, Body, HTML string }
+
+// statement is one sentence of the situation. Its level gives it a colour.
+type statement struct {
+	Level int
+	Text  string
+}
+
+// diskView is what the HTML report shows about one disk.
+type diskView struct {
+	Name, Age, When string
+	Level           int
+	Connection      string // empty when unknown
+	Connected       bool
+	Free, Used      string
+	Percent         int // used share of the disk, -1 when unknown
+}
 
 const (
 	levelOK = iota
 	levelWarn
 	levelBad
+	levelNone // neither good nor bad
 )
 
 var levelName = []string{"OK", "WARNING", "PROBLEM"}
@@ -131,7 +148,12 @@ func buildReport(in reportInput) Report {
 		}
 	}
 	var headline string
-	var situation, done, info, other []string
+	var done, info, diskInfo, other []string
+	var situation []statement
+	var disks []diskView
+	say := func(l int, format string, a ...any) {
+		situation = append(situation, statement{l, fmt.Sprintf(format, a...)})
+	}
 
 	byKind := map[string][]*Group{}
 	for _, g := range in.Groups {
@@ -145,7 +167,7 @@ func buildReport(in reportInput) Report {
 	if in.State == nil {
 		raise(levelBad)
 		headline = "backup state unknown"
-		situation = append(situation, fmt.Sprintf("It is not known whether backups work: the Time Machine preferences could not be read (%v). tmreportwell may need Full Disk Access in System Settings, Privacy & Security.", in.StateErr))
+		say(levelBad, "It is not known whether backups work: the Time Machine preferences could not be read (%v). tmreportwell may need Full Disk Access in System Settings, Privacy & Security.", in.StateErr)
 	} else {
 		st := in.State
 		open, isOpen := openAttempt(st, in.AttemptsFrom, in.To)
@@ -160,19 +182,32 @@ func buildReport(in reportInput) Report {
 			}
 			for _, a := range unfinished(d, in.AttemptsFrom, in.To, open) {
 				raise(levelWarn)
-				situation = append(situation, fmt.Sprintf("The backup started %s on %q did not complete.", stamp(a), d.Name))
+				say(levelWarn, "The backup started %s on %q did not complete.", stamp(a), d.Name)
 			}
-			line := fmt.Sprintf("%q: %s free, %s used", d.Name, gb(d.Free), gb(d.Used))
-			info = append(info, line)
+			diskInfo = append(diskInfo, fmt.Sprintf("%q: %s free, %s used", d.Name, gb(d.Free), gb(d.Used)))
 
 			// Every disk is judged on its own: a fresh one must not hide a stale one.
-			days, text := 1e9, "no completed backup"
+			days, text, diskLevel := 1e9, "no completed backup", levelOK
+			if n := len(d.Snapshots); n > 0 {
+				days = in.To.Sub(d.Snapshots[n-1]).Hours() / 24
+			}
+			if days >= in.BadDays {
+				diskLevel = levelBad
+			} else if days >= in.WarnDays {
+				diskLevel = levelWarn
+			}
+			raise(diskLevel)
+			v := diskView{Name: d.Name, Age: "never", Level: diskLevel, Free: gb(d.Free), Used: gb(d.Used), Percent: -1}
+			if total := d.Free + d.Used; total > 0 {
+				v.Percent = int(float64(d.Used) / float64(total) * 100)
+			}
 			if n := len(d.Snapshots); n > 0 {
 				last := d.Snapshots[n-1]
-				days, text = in.To.Sub(last).Hours()/24, "last backup "+age(in.To.Sub(last))+" ago"
-				situation = append(situation, fmt.Sprintf("The last backup on %q completed %s, %s ago.", d.Name, stamp(last), age(in.To.Sub(last))))
+				v.Age, v.When = age(in.To.Sub(last))+" ago", stamp(last)
+				text = "last backup " + v.Age
+				say(diskLevel, "The last backup on %q completed %s, %s.", d.Name, v.When, v.Age)
 			} else {
-				situation = append(situation, fmt.Sprintf("%q has no completed backup on record.", d.Name))
+				say(levelBad, "%q has no completed backup on record.", d.Name)
 			}
 			if days > worst {
 				worst, headline = days, text
@@ -180,35 +215,38 @@ func buildReport(in reportInput) Report {
 					headline = fmt.Sprintf("%q %s", d.Name, text)
 				}
 			}
-			stale := days >= in.WarnDays
-			if days >= in.BadDays {
-				raise(levelBad)
-			} else if stale {
-				raise(levelWarn)
+			if d.Attached != nil {
+				v.Connected, v.Connection = *d.Attached, "connected"
 			}
 			if no(d.Attached) {
-				situation = append(situation, fmt.Sprintf("%q is not connected at the time of this report.", d.Name))
+				v.Connection = "not connected"
+				connLevel := levelNone
+				if diskLevel != levelOK {
+					connLevel = levelWarn
+				}
+				say(connLevel, "%q is not connected at the time of this report.", d.Name)
 			}
+			disks = append(disks, v)
 		}
 		if len(st.Dest) == 0 {
 			raise(levelBad)
 			headline = "no backup disk configured"
-			situation = append(situation, "No backup disk is configured.")
+			say(levelBad, "No backup disk is configured.")
 		} else if completed == 0 && !running {
-			situation = append(situation, "No backup completed since the last report.")
+			say(levelNone, "No backup completed since the last report.")
 		}
 		switch {
 		case running:
-			situation = append(situation, "A backup is running right now.")
+			say(levelOK, "A backup is running right now.")
 		case isOpen:
-			situation = append(situation, fmt.Sprintf("The outcome of the backup started %s is not known yet.", stamp(open)))
+			say(levelNone, "The outcome of the backup started %s is not known yet.", stamp(open))
 		}
 		if !st.AutoBackup {
 			raise(levelWarn)
-			situation = append(situation, "Automatic backups are switched off.")
+			say(levelWarn, "Automatic backups are switched off.")
 		}
 		if st.RequiresAC && yes(st.OnBattery) {
-			situation = append(situation, "The Mac runs on battery, and automatic backups need AC power.")
+			say(levelNone, "The Mac runs on battery, and automatic backups need AC power.")
 		}
 		if attempt, next, skipped := nextAttempt(st, byKind[kindNotDue], byKind[kindSkip]); st.AutoBackup && !running && next.After(in.To) {
 			s := fmt.Sprintf("macOS does not try again by itself before %s.", stamp(next))
@@ -216,7 +254,7 @@ func buildReport(in reportInput) Report {
 				told = skipped
 				s = fmt.Sprintf("The attempt of %s was skipped (%s). %s", stamp(attempt), skipped, s)
 			}
-			situation = append(situation, s)
+			say(levelNone, "%s", s)
 		}
 		s := "Automatic backups: every " + age(st.Interval)
 		if st.Interval == 0 {
@@ -239,12 +277,12 @@ func buildReport(in reportInput) Report {
 	}
 	for _, g := range byKind[kindSkip] {
 		if g.Text != told {
-			situation = append(situation, fmt.Sprintf("Backups were skipped: %s (%s).", g.Text, span(g)))
+			say(levelWarn, "Backups were skipped: %s (%s).", g.Text, span(g))
 		}
 	}
 	if n := len(byKind[kindProblem]); n > 0 {
 		raise(levelWarn)
-		situation = append(situation, "Time Machine logged errors, see the log messages below.")
+		say(levelWarn, "Time Machine logged errors, see the log messages below.")
 	}
 	for _, g := range append(byKind[kindProblem], byKind[kindOther]...) {
 		tag := ""
@@ -269,33 +307,57 @@ func buildReport(in reportInput) Report {
 	}
 	if in.LogErr != nil {
 		raise(levelWarn)
-		situation = append(situation, fmt.Sprintf("The system log could not be read, so reasons for skipped backups may be missing: %v", in.LogErr))
+		say(levelWarn, "The system log could not be read, so reasons for skipped backups may be missing: %v", in.LogErr)
 	}
 	for _, g := range in.Gaps {
-		situation = append(situation, fmt.Sprintf("Log messages from %s to %s may be missing: tmreportwell did not run, and macOS keeps them for about a day.", stamp(g.From), stamp(g.To)))
+		say(levelNone, "Log messages from %s to %s may be missing: tmreportwell did not run, and macOS keeps them for about a day.", stamp(g.From), stamp(g.To))
 	}
 
+	p := page{Host: in.Host, Level: level, LevelName: levelName[level], Headline: headline,
+		From: stamp(in.From), To: stamp(in.To), Situation: situation, Disks: disks, Done: done, Settings: info, Log: other}
+	return Report{
+		Subject: fmt.Sprintf("[TmReportWell] %s %s: %s", in.Host, levelName[level], headline),
+		Body:    renderText(p, diskInfo),
+		HTML:    renderHTML(p),
+	}
+}
+
+// page is the content both renderings show.
+type page struct {
+	Host, LevelName, Headline string
+	Level                     int
+	From, To                  string
+	Situation                 []statement
+	Disks                     []diskView
+	Done, Settings, Log       []string
+}
+
+const nothingDone = "no backup completed in this period"
+
+func renderText(p page, diskInfo []string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Time Machine on %s: %s, %s\n", in.Host, levelName[level], headline)
-	section := func(title string, lines []string, empty string) {
+	fmt.Fprintf(&b, "Time Machine on %s: %s, %s\n", p.Host, p.LevelName, p.Headline)
+	section := func(title string, lines []string) {
 		if len(lines) == 0 {
-			if empty == "" {
-				return
-			}
-			lines = []string{empty}
+			return
 		}
 		fmt.Fprintf(&b, "\n%s\n", title)
 		for _, l := range lines {
 			fmt.Fprintf(&b, "  - %s\n", l)
 		}
 	}
-	section("Situation", situation, "")
-	fmt.Fprintf(&b, "\nDetails for %s to %s\n", stamp(in.From), stamp(in.To))
-	section("Done", done, "no backup completed in this period")
-	section("Settings and disks", info, "")
-	section("Other log messages", other, "")
-	return Report{
-		Subject: fmt.Sprintf("[TmReportWell] %s %s: %s", in.Host, levelName[level], headline),
-		Body:    b.String(),
+	var sit []string
+	for _, s := range p.Situation {
+		sit = append(sit, s.Text)
 	}
+	section("Situation", sit)
+	fmt.Fprintf(&b, "\nDetails for %s to %s\n", p.From, p.To)
+	done := p.Done
+	if len(done) == 0 {
+		done = []string{nothingDone}
+	}
+	section("Done", done)
+	section("Settings and disks", append(diskInfo, p.Settings...))
+	section("Other log messages", p.Log)
+	return b.String()
 }

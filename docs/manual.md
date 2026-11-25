@@ -41,7 +41,8 @@ Log messages of **backupd** and **backupd-helper** that differ only in numbers a
 A message that **tmreportwell** does not recognise appears verbatim in the report.
 
 The report opens with the situation in plain sentences.
-Completed backups, settings and log messages follow.
+Disks, completed backups, settings and log messages follow.
+The mail carries the report as a coloured HTML page and as plain text.
 The age of the last backup is judged for each disk on its own.
 A backup that is still running appears in a later report if it does not complete.
 A span without log collection that is longer than a day is named in the report.
@@ -57,6 +58,7 @@ A report that cannot be mailed is sent by the next run that succeeds.
 # OPTIONS
 
 - `report`: Print the report. Sends nothing and changes nothing.
+- `html`: Print the report as the HTML page the mail carries. Sends nothing and changes nothing.
 - `run`: Collect new log messages and mail the report if it is due.
 - `send`: Collect new log messages and mail the report now.
 - `install`: Install and start the launch agent.

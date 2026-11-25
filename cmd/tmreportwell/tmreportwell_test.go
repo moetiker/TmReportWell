@@ -2,6 +2,8 @@ package main
 
 import (
 	"io"
+	"mime"
+	"mime/multipart"
 	"mime/quotedprintable"
 	"net/mail"
 	"strings"
@@ -99,7 +101,7 @@ func TestDue(t *testing.T) {
 }
 
 func TestComposeMail(t *testing.T) {
-	b, err := composeMail("a@example.com", "b@example.com", Report{"Zürich", "grün\n"}, time.Now())
+	b, err := composeMail("a@example.com", "b@example.com", Report{Subject: "Zürich", Body: "grün\n"}, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,5 +234,41 @@ func TestLocalSnaps(t *testing.T) {
 	got := parseLocalSnaps("Snapshots for disk /:\ncom.apple.TimeMachine.2026-11-21-100551.local\ncom.apple.TimeMachine.2026-11-08-104558.local\n")
 	if len(got) != 2 || got[0].Day() != 8 {
 		t.Error(got)
+	}
+}
+
+func TestHTMLMail(t *testing.T) {
+	now := at("2026-11-25 09:00")
+	r := buildReport(reportInput{Host: "m", To: now, WarnDays: 2, BadDays: 7, State: &TMState{AutoBackup: true, RunningKnown: true,
+		Dest: []Destination{{Name: "<b>D&", Free: 0, Used: 10, Snapshots: []time.Time{at("2026-11-08 13:32")}}}}})
+	if strings.Contains(r.HTML, "<b>D") || !strings.Contains(r.HTML, "&lt;b&gt;D&amp;") {
+		t.Error("the disk name is not escaped")
+	}
+	if !strings.Contains(r.HTML, levelColor[levelBad]) || !strings.Contains(r.HTML, "100% full") || strings.Contains(r.HTML, "ZgotmplZ") {
+		t.Error(r.HTML)
+	}
+	b, err := composeMail("a@example.com", "b@example.com", r, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := mail.ReadMessage(strings.NewReader(string(b)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, params, err := mime.ParseMediaType(m.Header.Get("Content-Type"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mr := multipart.NewReader(m.Body, params["boundary"])
+	for _, want := range []struct{ kind, text string }{{"text/plain", r.Body}, {"text/html", r.HTML}} {
+		p, err := mr.NextPart() // decodes quoted-printable
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := io.ReadAll(p)
+		if err != nil || !strings.HasPrefix(p.Header.Get("Content-Type"), want.kind) ||
+			strings.ReplaceAll(string(got), "\r\n", "\n") != want.text {
+			t.Errorf("%s part differs: %v\n%s", want.kind, err, got)
+		}
 	}
 }

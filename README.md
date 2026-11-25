@@ -59,6 +59,7 @@ Access.
 ## Commands
 
 - `tmreportwell report`: Print the report. Sends nothing and changes nothing.
+- `tmreportwell html`: Print the report as the HTML page the mail carries.
 - `tmreportwell run`: Collect new log messages and mail the report if it is due,
   at most once per day.
 - `tmreportwell send`: Collect new log messages and mail the report now.
