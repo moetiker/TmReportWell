@@ -12,3 +12,16 @@ Observed on macOS 27.2.
   No backup ran while the patterns were written, so the messages of a running
   backup are unknown. Anything unrecognised is shown verbatim.
 - The last line of `log show --style ndjson` is a trailer without a timestamp.
+- Releases carry macOS archives only. The program compiles for other systems but
+  depends on tmutil, the unified log and launchd.
+- The binary lives in `cmd/tmreportwell` because `go install` names a
+  program after its last path element, and the repository is called TmReportWell.
+- The time of the next attempt comes from the scheduler's own "not due" message.
+  It counts 24 hours from the last attempt also when that attempt was skipped:
+  on 2026-11-25 the skip at 11:05:48 belongs to the attempt at 11:05:18.
+- `tmreportwell install` writes the path it was called by into the launch agent.
+  A resolved path would name the versioned Cellar directory, which
+  `brew upgrade` removes.
+- The formula names its two macOS urls at the top level and not in `on_macos`.
+  Homebrew needs a url on every platform, or each `brew` command that loads the
+  formula fails on Linux.

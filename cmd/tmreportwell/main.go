@@ -1,4 +1,4 @@
-// tmwell mails a daily report about what Time Machine did and did not do.
+// tmreportwell mails a daily report about what Time Machine did and did not do.
 package main
 
 import (
@@ -9,13 +9,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
-const agentLabel = "tmwell"
-
-// version is set by the release build with -ldflags -X.
-var version = "dev"
+const agentLabel = "tmreportwell"
 
 // Config is read from config.json.
 type Config struct {
@@ -29,11 +27,57 @@ type Config struct {
 	BadDays  float64 `json:"problem_days"`
 }
 
+// logRetention is how long macOS kept Time Machine messages on macOS 27.2.
+const logRetention = 24 * time.Hour
+
+// Gap is a time span whose log messages may be lost.
+type Gap struct {
+	From time.Time `json:"from"`
+	To   time.Time `json:"to"`
+}
+
 // State survives between the hourly runs.
 type State struct {
-	Cursor   time.Time         `json:"cursor"`    // newest log event already collected
-	LastSent time.Time         `json:"last_sent"` // end of the last mailed period
-	Groups   map[string]*Group `json:"groups"`
+	Cursor       time.Time         `json:"cursor"`        // newest log event already collected
+	Collected    time.Time         `json:"collected"`     // last successful collection
+	LastSent     time.Time         `json:"last_sent"`     // end of the last mailed period
+	PrefsFrom    time.Time         `json:"prefs_from"`    // completed backups after this are unreported
+	AttemptsFrom time.Time         `json:"attempts_from"` // started backups after this are unresolved
+	Gaps         []Gap             `json:"gaps,omitempty"`
+	Groups       map[string]*Group `json:"groups"`
+}
+
+// noteGap records a span the collector slept through for longer than macOS
+// keeps the messages.
+func (s *State) noteGap(now time.Time) {
+	if !s.Collected.IsZero() && now.Sub(s.Collected) > logRetention {
+		s.Gaps = append(s.Gaps, Gap{s.Collected, now.Add(-logRetention)})
+	}
+	s.Collected = now
+}
+
+func (s *State) collect(now time.Time) error {
+	newest, err := collectLog(s.Cursor, s.Groups)
+	if err != nil {
+		return err
+	}
+	s.Cursor = newest
+	s.noteGap(now)
+	return nil
+}
+
+// markSent starts the next period. What the sent report could not settle stays
+// open: everything when the preferences were unreadable, and an attempt that
+// was still running.
+func (s *State) markSent(now time.Time, st *TMState) {
+	if st != nil {
+		open, ok := openAttempt(st, s.AttemptsFrom, now)
+		s.PrefsFrom, s.AttemptsFrom = now, now
+		if ok {
+			s.AttemptsFrom = open.Add(-time.Second)
+		}
+	}
+	s.LastSent, s.Groups, s.Gaps = now, map[string]*Group{}, nil
 }
 
 func dir() string {
@@ -41,11 +85,11 @@ func dir() string {
 	if err != nil {
 		fatal(err)
 	}
-	return filepath.Join(h, "Library", "Application Support", "TmWell")
+	return filepath.Join(h, "Library", "Application Support", "TmReportWell")
 }
 
 func fatal(err error) {
-	fmt.Fprintf(os.Stderr, "%s tmwell: %v\n", time.Now().Format(time.DateTime), err)
+	fmt.Fprintf(os.Stderr, "%s tmreportwell: %v\n", time.Now().Format(time.DateTime), err)
 	os.Exit(1)
 }
 
@@ -86,7 +130,30 @@ func loadState(now time.Time) (*State, error) {
 	if s.LastSent.IsZero() {
 		s.LastSent = now.Add(-24 * time.Hour)
 	}
+	if s.PrefsFrom.IsZero() {
+		s.PrefsFrom = s.LastSent
+	}
+	if s.AttemptsFrom.IsZero() {
+		s.AttemptsFrom = s.LastSent
+	}
 	return s, err
+}
+
+// lock keeps a second tmreportwell waiting. Without it a send by hand during
+// the hourly run mails the same report twice.
+func lock() (*os.File, error) {
+	if err := os.MkdirAll(dir(), 0o700); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(filepath.Join(dir(), "lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return f, nil
 }
 
 func saveState(s *State) error {
@@ -104,23 +171,27 @@ func saveState(s *State) error {
 	return os.Rename(p+".new", p)
 }
 
-// due reports whether today's mail is still to be sent.
+// due reports whether today's mail is still to be sent. A mail sent earlier
+// today, also by hand before send_at, is today's mail.
 func due(sendAt string, lastSent, now time.Time) bool {
 	t, err := time.Parse("15:04", sendAt)
 	if err != nil {
 		return false
 	}
 	slot := time.Date(now.Year(), now.Month(), now.Day(), t.Hour(), t.Minute(), 0, 0, now.Location())
-	return !now.Before(slot) && lastSent.Before(slot)
+	y, m, d := lastSent.In(now.Location()).Date()
+	sentToday := y == now.Year() && m == now.Month() && d == now.Day()
+	return !now.Before(slot) && lastSent.Before(slot) && !sentToday
 }
 
-func report(c *Config, s *State, now time.Time, logErr error) Report {
+func report(c *Config, s *State, now time.Time, logErr error) (Report, *TMState) {
 	st, err := readTMState()
-	return buildReport(reportInput{Host: hostname(), From: s.LastSent, To: now, State: st, StateErr: err,
-		LogErr: logErr, Groups: s.Groups, WarnDays: c.WarnDays, BadDays: c.BadDays})
+	return buildReport(reportInput{Host: hostname(), From: s.LastSent, To: now, PrefsFrom: s.PrefsFrom,
+		AttemptsFrom: s.AttemptsFrom, State: st, StateErr: err, LogErr: logErr, Gaps: s.Gaps, Groups: s.Groups,
+		WarnDays: c.WarnDays, BadDays: c.BadDays}), st
 }
 
-func cmdReport() error {
+func cmdReport(html bool) error {
 	c, err := loadConfig()
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
@@ -130,8 +201,12 @@ func cmdReport() error {
 	if err != nil {
 		return err
 	}
-	_, logErr := collectLog(s.Cursor, s.Groups)
-	r := report(c, s, now, logErr)
+	logErr := s.collect(now)
+	r, _ := report(c, s, now, logErr)
+	if html {
+		fmt.Print(r.HTML)
+		return nil
+	}
 	fmt.Printf("Subject: %s\n\n%s", r.Subject, r.Body)
 	return nil
 }
@@ -141,13 +216,17 @@ func cmdRun(force bool) error {
 	if err != nil {
 		return err
 	}
+	l, err := lock()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = l.Close() }()
 	now := time.Now()
 	s, err := loadState(now)
 	if err != nil {
 		return err
 	}
-	var logErr error
-	s.Cursor, logErr = collectLog(s.Cursor, s.Groups)
+	logErr := s.collect(now)
 	// Saved before mailing: the log drops these messages after about a day, so
 	// they must outlive a mail server that stays unreachable for longer.
 	if err := saveState(s); err != nil {
@@ -156,10 +235,11 @@ func cmdRun(force bool) error {
 	if !force && !due(c.SendAt, s.LastSent, now) {
 		return logErr
 	}
-	if err := sendMail(c, report(c, s, now, logErr)); err != nil {
+	r, st := report(c, s, now, logErr)
+	if err := sendMail(c, r); err != nil {
 		return fmt.Errorf("sending mail: %w", err)
 	}
-	s.LastSent, s.Groups = now, map[string]*Group{}
+	s.markSent(now, st)
 	return saveState(s)
 }
 
@@ -178,9 +258,8 @@ func cmdInstall() error {
 	if err != nil {
 		return err
 	}
-	if exe, err = filepath.EvalSymlinks(exe); err != nil {
-		return err
-	}
+	// Symlinks stay unresolved: brew links bin/ into a Cellar directory named
+	// after the version, which the next upgrade removes.
 	h, _ := os.UserHomeDir()
 	esc := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
 	pl := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
@@ -194,14 +273,15 @@ func cmdInstall() error {
 	<key>StandardErrorPath</key><string>%s</string>
 </dict>
 </plist>
-`, agentLabel, esc.Replace(exe), esc.Replace(filepath.Join(h, "Library", "Logs", "tmwell.log")))
+`, agentLabel, esc.Replace(exe), esc.Replace(filepath.Join(h, "Library", "Logs", "tmreportwell.log")))
 	if err := os.MkdirAll(filepath.Dir(agentPath()), 0o755); err != nil {
 		return err
 	}
 	if err := os.WriteFile(agentPath(), []byte(pl), 0o644); err != nil {
 		return err
 	}
-	exec.Command("/bin/launchctl", "bootout", launchDomain()+"/"+agentLabel).Run()
+	// bootout fails when the agent is not loaded, which is fine here.
+	_ = exec.Command("/bin/launchctl", "bootout", launchDomain()+"/"+agentLabel).Run()
 	if _, err := run(30*time.Second, "/bin/launchctl", "bootstrap", launchDomain(), agentPath()); err != nil {
 		return err
 	}
@@ -210,7 +290,8 @@ func cmdInstall() error {
 }
 
 func cmdUninstall() error {
-	exec.Command("/bin/launchctl", "bootout", launchDomain()+"/"+agentLabel).Run()
+	// bootout fails when the agent is not loaded, which is fine here.
+	_ = exec.Command("/bin/launchctl", "bootout", launchDomain()+"/"+agentLabel).Run()
 	return os.Remove(agentPath())
 }
 
@@ -222,9 +303,11 @@ func main() {
 	var err error
 	switch cmd {
 	case "--version", "-V":
-		fmt.Println("tmwell", version)
+		fmt.Println("tmreportwell", version)
 	case "report":
-		err = cmdReport()
+		err = cmdReport(false)
+	case "html":
+		err = cmdReport(true)
 	case "run":
 		err = cmdRun(false)
 	case "send":
@@ -234,13 +317,15 @@ func main() {
 	case "uninstall":
 		err = cmdUninstall()
 	default:
-		fmt.Fprint(os.Stderr, `usage: tmwell <command>
+		fmt.Fprint(os.Stderr, `usage: tmreportwell <command>
 
   report     print the report, change nothing
+  html       print the report as the HTML page the mail carries
   run        collect log messages, mail the report if it is due
   send       collect log messages, mail the report now
   install    run hourly as a launch agent
   uninstall  remove the launch agent
+  --version  print the version
 `)
 		os.Exit(2)
 	}

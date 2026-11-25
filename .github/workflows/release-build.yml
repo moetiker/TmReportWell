@@ -1,0 +1,41 @@
+name: Release build
+
+# Called by Create release PR on the release branch before the pull request
+# exists (D28). It builds the two macOS archives, the bottle and the
+# formula; the exceptions in .github/repo-infra.json say why the other targets
+# are left out. Read-only:
+# nothing here writes the repository.
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: The version being released.
+        type: string
+        required: true
+      ref:
+        description: The release branch head to build.
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  binaries:
+    uses: oposs/repo-infra/.github/workflows/ri-release-go-binaries.yml@v2
+    with:
+      version: ${{ inputs.version }}
+      ref: ${{ inputs.ref }}
+      bin: tmreportwell
+      package: ./cmd/tmreportwell
+      version_var: main.version
+      extra_paths: config.example.json
+      targets: x86_64-apple-darwin aarch64-apple-darwin
+
+  homebrew:
+    needs: binaries
+    uses: oposs/repo-infra/.github/workflows/ri-release-homebrew.yml@v2
+    with:
+      version: ${{ inputs.version }}
+      ref: ${{ inputs.ref }}
+      bin: tmreportwell

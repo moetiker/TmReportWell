@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-const keychainService = "tmwell-smtp"
+const keychainService = "tmreportwell-smtp"
 
 func keychainPassword(account string) (string, error) {
 	b, err := run(30*time.Second, "/usr/bin/security", "find-generic-password",
@@ -41,17 +41,33 @@ func composeMail(from, to string, r Report, now time.Time) ([]byte, error) {
 	fmt.Fprintf(&b, "Subject: %s\r\n", mime.QEncoding.Encode("utf-8", r.Subject))
 	fmt.Fprintf(&b, "Date: %s\r\n", now.Format(time.RFC1123Z))
 	fmt.Fprintf(&b, "Message-ID: <%s@%s>\r\n", hex.EncodeToString(id), domain)
-	b.WriteString("Auto-Submitted: auto-generated\r\nMIME-Version: 1.0\r\n" +
-		"Content-Type: text/plain; charset=utf-8\r\n" +
-		"Content-Transfer-Encoding: quoted-printable\r\n\r\n")
-	w := quotedprintable.NewWriter(&b)
-	if _, err := w.Write([]byte(r.Body)); err != nil {
-		return nil, err
+	b.WriteString("Auto-Submitted: auto-generated\r\nMIME-Version: 1.0\r\n")
+	if r.HTML == "" {
+		if err := writePart(&b, "text/plain", r.Body); err != nil {
+			return nil, err
+		}
+		return b.Bytes(), nil
 	}
-	if err := w.Close(); err != nil {
-		return nil, err
+	boundary := "=_" + hex.EncodeToString(id)
+	fmt.Fprintf(&b, "Content-Type: multipart/alternative; boundary=\"%s\"\r\n", boundary)
+	// The last part is the one mail programs prefer.
+	for _, p := range [][2]string{{"text/plain", r.Body}, {"text/html", r.HTML}} {
+		fmt.Fprintf(&b, "\r\n--%s\r\n", boundary)
+		if err := writePart(&b, p[0], p[1]); err != nil {
+			return nil, err
+		}
 	}
+	fmt.Fprintf(&b, "\r\n--%s--\r\n", boundary)
 	return b.Bytes(), nil
+}
+
+func writePart(b *bytes.Buffer, mediaType, text string) error {
+	fmt.Fprintf(b, "Content-Type: %s; charset=utf-8\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n", mediaType)
+	w := quotedprintable.NewWriter(b)
+	if _, err := w.Write([]byte(text)); err != nil {
+		return err
+	}
+	return w.Close()
 }
 
 func sendMail(c *Config, r Report) error {
@@ -76,8 +92,10 @@ func sendMail(c *Config, r Report) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
-	conn.SetDeadline(time.Now().Add(2 * time.Minute))
+	defer func() { _ = conn.Close() }()
+	if err := conn.SetDeadline(time.Now().Add(2 * time.Minute)); err != nil {
+		return err
+	}
 	tc := &tls.Config{ServerName: c.SMTPHost}
 	if c.SMTPPort == 465 {
 		conn = tls.Client(conn, tc)
@@ -86,7 +104,7 @@ func sendMail(c *Config, r Report) error {
 	if err != nil {
 		return err
 	}
-	defer cl.Close()
+	defer func() { _ = cl.Close() }()
 	if c.SMTPPort != 465 {
 		// No fallback to plain text: StartTLS fails when the server lacks it.
 		if err := cl.StartTLS(tc); err != nil {
@@ -114,6 +132,6 @@ func sendMail(c *Config, r Report) error {
 	if err := w.Close(); err != nil {
 		return err
 	}
-	cl.Quit()
+	_ = cl.Quit()
 	return nil
 }

@@ -25,6 +25,7 @@ type Destination struct {
 	Attempts  []time.Time // started backups, ascending
 	Free      int64
 	Used      int64
+	Attached  *bool // nil when it could not be determined
 }
 
 // TMState is what the Time Machine preferences say right now.
@@ -35,6 +36,8 @@ type TMState struct {
 	Running      bool
 	RunningKnown bool
 	Dest         []Destination
+	OnBattery    *bool // nil when it could not be determined
+	LocalSnaps   []time.Time
 }
 
 func run(timeout time.Duration, name string, arg ...string) ([]byte, error) {
@@ -68,7 +71,51 @@ func readTMState() (*TMState, error) {
 			st.Running, st.RunningKnown = m["Running"].(bool)
 		}
 	}
+	if b, err := run(30*time.Second, "/usr/bin/pmset", "-g", "batt"); err == nil {
+		bat := strings.Contains(string(b), "'Battery Power'")
+		if bat || strings.Contains(string(b), "'AC Power'") {
+			st.OnBattery = &bat
+		}
+	}
+	if b, err := run(30*time.Second, "/usr/bin/tmutil", "listlocalsnapshots", "/"); err == nil {
+		st.LocalSnaps = parseLocalSnaps(string(b))
+	}
+	for i := range st.Dest {
+		st.Dest[i].Attached = attached(st.Dest[i].UUIDs)
+	}
 	return st, nil
+}
+
+// attached asks diskutil whether a volume of the destination is present.
+// diskutil exits 1 with "Could not find disk" for an unplugged one; any other
+// failure says nothing about the disk.
+func attached(ids []string) *bool {
+	if len(ids) == 0 {
+		return nil
+	}
+	found := false
+	for _, u := range ids {
+		_, err := run(30*time.Second, "/usr/sbin/diskutil", "info", "-plist", u)
+		if err == nil {
+			found = true
+		} else if !strings.Contains(err.Error(), "Could not find disk") {
+			return nil
+		}
+	}
+	return &found
+}
+
+var localSnap = regexp.MustCompile(`(?m)^com\.apple\.TimeMachine\.(\d{4}-\d{2}-\d{2}-\d{6})\.local$`)
+
+func parseLocalSnaps(out string) []time.Time {
+	var r []time.Time
+	for _, m := range localSnap.FindAllStringSubmatch(out, -1) {
+		if t, err := time.ParseInLocation("2006-01-02-150405", m[1], time.Local); err == nil {
+			r = append(r, t)
+		}
+	}
+	sort.Slice(r, func(i, j int) bool { return r[i].Before(r[j]) })
+	return r
 }
 
 func decodeTMState(b []byte) (*TMState, error) {
@@ -161,6 +208,12 @@ var (
 	}
 )
 
+// The scheduler names the attempt it counts from, also when that attempt was
+// skipped, as "since last auto backup attempt at 2026-11-25 10:05:18 +0000".
+var lastAttempt = regexp.MustCompile(`last auto backup attempt at (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} [+-]\d{4})`)
+
+const notDueText = "backup not due yet"
+
 const skipPrefix = "Skipping scheduled Time Machine backup: "
 
 func classify(level, msg string) (kind, text string, keep bool) {
@@ -172,7 +225,10 @@ func classify(level, msg string) (kind, text string, keep bool) {
 	}
 	if reason, ok := strings.CutPrefix(text, skipPrefix); ok {
 		if strings.HasPrefix(reason, "Autobackup interval is") {
-			return kindNotDue, "backup not due yet", true
+			if m := lastAttempt.FindStringSubmatch(reason); m != nil {
+				return kindNotDue, notDueText + ", last attempt " + m[1], true
+			}
+			return kindNotDue, notDueText, true
 		}
 		return kindSkip, reason, true
 	}
