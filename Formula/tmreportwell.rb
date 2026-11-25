@@ -6,13 +6,13 @@
 class Tmreportwell < Formula
   desc "Mail a daily report about Time Machine backups"
   homepage "https://github.com/moetiker/TmReportWell"
-  version "0.0.1"
+  version "0.0.2"
   license "MIT"
 
   # BOTTLE-START
   bottle do
-    root_url "https://github.com/moetiker/TmReportWell/releases/download/v0.0.1"
-    sha256 cellar: :any_skip_relocation, arm64_ventura: "13397486d7f8c63813fde98f4cbb2dec4273588aef6a6e3d20e0e1f1c5a4a2d0"
+    root_url "https://github.com/moetiker/TmReportWell/releases/download/v0.0.2"
+    sha256 cellar: :any_skip_relocation, arm64_ventura: "08334ffa41a4ef819f1c40054de800d73fc6c3c28b285a06c71b47f772b83f3d"
   end
   # BOTTLE-END
 
@@ -20,11 +20,11 @@ class Tmreportwell < Formula
 
   on_arm do
     url "https://github.com/moetiker/TmReportWell/releases/download/v#{version}/tmreportwell-#{version}-aarch64-apple-darwin.tar.gz"
-    sha256 "86da2b2d3721a04f960921b4f510c1052e3adfdf563c2974abd226dfe0296849" # mac-arm
+    sha256 "d99dc5ecc5d9f63139ed487f2e9007e23b49bf7f9920c7ad9007d9817a5c47b7" # mac-arm
   end
   on_intel do
     url "https://github.com/moetiker/TmReportWell/releases/download/v#{version}/tmreportwell-#{version}-x86_64-apple-darwin.tar.gz"
-    sha256 "026b84cfc6050df352927512454efe73d90f8fd9b39919b6b19706f1c55bcdd1" # mac-x86
+    sha256 "ef26be5691328cfb16f6e442daba92dd7de03358e5a93365a886f668f6bbd199" # mac-x86
   end
 
   def install
