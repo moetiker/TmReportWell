@@ -17,7 +17,26 @@ brew trust --formula moetiker/TmReportWell/tmreportwell
 brew install tmreportwell
 ```
 
-`brew trust` exists from Homebrew 6 on; skip it on older versions.
+`brew trust` exists from Homebrew 6 on; skip it on older versions. Then follow
+[Set up](#set-up).
+
+Update:
+
+```sh
+brew update
+brew upgrade tmreportwell
+```
+
+macOS can withdraw Full Disk Access after an update. If a report then reads
+"backup state unknown", grant it again.
+
+Remove:
+
+```sh
+tmreportwell uninstall
+brew uninstall tmreportwell
+brew untap moetiker/TmReportWell
+```
 
 mise:
 
@@ -52,9 +71,15 @@ tmreportwell send
 tmreportwell install
 ```
 
-If the mailed report says that the Time Machine preferences could not be read,
-add `tmreportwell` under System Settings, Privacy & Security, Full Disk
-Access.
+The launch agent needs Full Disk Access to read the Time Machine preferences.
+Print the path of the program with `command -v tmreportwell` and add it under
+System Settings, Privacy & Security, Full Disk Access. In the file dialog,
+Cmd+Shift+G takes the path. Without access the report reads "backup state
+unknown".
+
+`tmreportwell install` stores the path it was called by. After moving from
+another installation to Homebrew, run it again as
+`$(brew --prefix)/bin/tmreportwell install`.
 
 ## Commands
 
