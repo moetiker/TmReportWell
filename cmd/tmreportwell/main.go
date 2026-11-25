@@ -1,4 +1,4 @@
-// tmwell mails a daily report about what Time Machine did and did not do.
+// tmreportwell mails a daily report about what Time Machine did and did not do.
 package main
 
 import (
@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-const agentLabel = "tmwell"
+const agentLabel = "tmreportwell"
 
 // Config is read from config.json.
 type Config struct {
@@ -84,11 +84,11 @@ func dir() string {
 	if err != nil {
 		fatal(err)
 	}
-	return filepath.Join(h, "Library", "Application Support", "TmWell")
+	return filepath.Join(h, "Library", "Application Support", "TmReportWell")
 }
 
 func fatal(err error) {
-	fmt.Fprintf(os.Stderr, "%s tmwell: %v\n", time.Now().Format(time.DateTime), err)
+	fmt.Fprintf(os.Stderr, "%s tmreportwell: %v\n", time.Now().Format(time.DateTime), err)
 	os.Exit(1)
 }
 
@@ -228,9 +228,8 @@ func cmdInstall() error {
 	if err != nil {
 		return err
 	}
-	if exe, err = filepath.EvalSymlinks(exe); err != nil {
-		return err
-	}
+	// Symlinks stay unresolved: brew links bin/ into a Cellar directory named
+	// after the version, which the next upgrade removes.
 	h, _ := os.UserHomeDir()
 	esc := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
 	pl := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
@@ -244,7 +243,7 @@ func cmdInstall() error {
 	<key>StandardErrorPath</key><string>%s</string>
 </dict>
 </plist>
-`, agentLabel, esc.Replace(exe), esc.Replace(filepath.Join(h, "Library", "Logs", "tmwell.log")))
+`, agentLabel, esc.Replace(exe), esc.Replace(filepath.Join(h, "Library", "Logs", "tmreportwell.log")))
 	if err := os.MkdirAll(filepath.Dir(agentPath()), 0o755); err != nil {
 		return err
 	}
@@ -274,7 +273,7 @@ func main() {
 	var err error
 	switch cmd {
 	case "--version", "-V":
-		fmt.Println("tmwell", version)
+		fmt.Println("tmreportwell", version)
 	case "report":
 		err = cmdReport()
 	case "run":
@@ -286,7 +285,7 @@ func main() {
 	case "uninstall":
 		err = cmdUninstall()
 	default:
-		fmt.Fprint(os.Stderr, `usage: tmwell <command>
+		fmt.Fprint(os.Stderr, `usage: tmreportwell <command>
 
   report     print the report, change nothing
   run        collect log messages, mail the report if it is due

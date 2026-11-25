@@ -2,20 +2,21 @@
   "moving_major_tag": false,
   "version_files": [
     {
-      "path": "cmd/tmwell/version.go",
+      "path": "cmd/tmreportwell/version.go",
       "pattern": "^var version = \"[^\"]*\"",
       "replacement": "var version = \"$VERSION\"",
       "verify": "^var version = \"$VERSION\""
     }
   ],
-  "release_files": [],
+  "release_files": [
+    "Formula/tmreportwell.rb"
+  ],
   "release_assets": [
-    "tmwell-*-x86_64-apple-darwin.tar.gz",
-    "tmwell-*-aarch64-apple-darwin.tar.gz"
+    "tmreportwell-*-x86_64-apple-darwin.tar.gz",
+    "tmreportwell-*-aarch64-apple-darwin.tar.gz"
   ],
   "exceptions": {
     "native-targets": "the program reads Time Machine through tmutil, the unified log and launchd, which exist only on macOS",
-    "linux-packages": "the program runs only on macOS",
-    "homebrew": "ri-release-homebrew needs Linux archives, and the program runs only on macOS"
+    "linux-packages": "the program runs only on macOS"
   }
 }

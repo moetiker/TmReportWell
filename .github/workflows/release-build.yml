@@ -25,7 +25,14 @@ jobs:
     with:
       version: ${{ inputs.version }}
       ref: ${{ inputs.ref }}
-      bin: tmwell
-      package: ./cmd/tmwell
+      bin: tmreportwell
+      package: ./cmd/tmreportwell
       version_var: main.version
       targets: x86_64-apple-darwin aarch64-apple-darwin
+
+  formula:
+    needs: binaries
+    uses: ./.github/workflows/release-build-local.yml
+    with:
+      version: ${{ inputs.version }}
+      ref: ${{ inputs.ref }}

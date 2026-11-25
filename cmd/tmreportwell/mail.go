@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-const keychainService = "tmwell-smtp"
+const keychainService = "tmreportwell-smtp"
 
 func keychainPassword(account string) (string, error) {
 	b, err := run(30*time.Second, "/usr/bin/security", "find-generic-password",

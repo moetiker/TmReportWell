@@ -145,7 +145,7 @@ func buildReport(in reportInput) Report {
 		raise(levelBad)
 		headline = "backup state unknown"
 		situation = append(situation, "It is not known whether backups work: the Time Machine preferences could not be read.")
-		todo = append(todo, "Give tmwell Full Disk Access in System Settings, Privacy & Security.")
+		todo = append(todo, "Give tmreportwell Full Disk Access in System Settings, Privacy & Security.")
 		notDone = append(notDone, fmt.Sprintf("Time Machine preferences could not be read: %v", in.StateErr))
 	} else {
 		st := in.State
@@ -297,7 +297,7 @@ func buildReport(in reportInput) Report {
 		notDone = append(notDone, fmt.Sprintf("The system log could not be read: %v", in.LogErr))
 	}
 	for _, g := range in.Gaps {
-		situation = append(situation, fmt.Sprintf("Log messages from %s to %s may be missing: tmwell did not run, and macOS keeps them for about a day.", stamp(g.From), stamp(g.To)))
+		situation = append(situation, fmt.Sprintf("Log messages from %s to %s may be missing: tmreportwell did not run, and macOS keeps them for about a day.", stamp(g.From), stamp(g.To)))
 	}
 
 	var b strings.Builder
@@ -322,7 +322,7 @@ func buildReport(in reportInput) Report {
 	section("Settings and disks", info, "")
 	section("Other log messages", other, "")
 	return Report{
-		Subject: fmt.Sprintf("[TmWell] %s %s: %s", in.Host, levelName[level], headline),
+		Subject: fmt.Sprintf("[TmReportWell] %s %s: %s", in.Host, levelName[level], headline),
 		Body:    b.String(),
 	}
 }

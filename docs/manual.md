@@ -1,18 +1,18 @@
 ---
-title: TMWELL
+title: TMREPORTWELL
 section: 1
-header: tmwell manual
-footer: tmwell
+header: tmreportwell manual
+footer: tmreportwell
 date: 2026-11-25
 ---
 
 # NAME
 
-tmwell - mail a daily report about Time Machine
+tmreportwell - mail a daily report about Time Machine
 
 # SYNOPSIS
 
-**tmwell** *command*
+**tmreportwell** *command*
 
 # CONFIGURATION
 
@@ -28,17 +28,17 @@ The configuration is a JSON file, see **FILES**.
 - `warn_days`: Age in days of the last completed backup at which the report reads WARNING, 2 by default.
 - `problem_days`: Age in days of the last completed backup at which the report reads PROBLEM, 7 by default.
 
-The password is the generic keychain item with the service `tmwell-smtp` and the account `smtp_user`.
+The password is the generic keychain item with the service `tmreportwell-smtp` and the account `smtp_user`.
 
 # DESCRIPTION
 
-**tmwell** reports which Time Machine backups completed since the last report,
+**tmreportwell** reports which Time Machine backups completed since the last report,
 which did not run or did not complete,
 and the reasons given in the system log.
 
 Backups come from the Time Machine preferences.
 Log messages of **backupd** and **backupd-helper** that differ only in numbers are grouped.
-A message that **tmwell** does not recognise appears verbatim in the report.
+A message that **tmreportwell** does not recognise appears verbatim in the report.
 
 The report opens with the situation in plain sentences and the steps that remain to be done.
 The age of the last backup is judged for each disk on its own.
@@ -49,7 +49,7 @@ The subject reads OK, WARNING or PROBLEM.
 WARNING also covers errors in the log, a log that cannot be read, backups that did not complete and automatic backups that are switched off.
 PROBLEM also covers Time Machine preferences that cannot be read, no configured backup disk and no completed backup on record.
 
-The launch agent runs **tmwell run** every hour.
+The launch agent runs **tmreportwell run** every hour.
 A report that cannot be mailed is sent by the next run that succeeds.
 
 # OPTIONS
@@ -69,16 +69,16 @@ A report that cannot be mailed is sent by the next run that succeeds.
 
 # FILES
 
-- `~/Library/Application Support/TmWell/config.json`: The configuration.
-- `~/Library/Application Support/TmWell/state.json`: Collected log messages and the time of the last report.
-- `~/Library/LaunchAgents/tmwell.plist`: The launch agent.
-- `~/Library/Logs/tmwell.log`: Errors of the launch agent.
+- `~/Library/Application Support/TmReportWell/config.json`: The configuration.
+- `~/Library/Application Support/TmReportWell/state.json`: Collected log messages and the time of the last report.
+- `~/Library/LaunchAgents/tmreportwell.plist`: The launch agent.
+- `~/Library/Logs/tmreportwell.log`: Errors of the launch agent.
 - `/Library/Preferences/com.apple.TimeMachine.plist`: The Time Machine preferences.
 
 # CAVEATS
 
 macOS can deny access to the Time Machine preferences.
-The report then reads "backup state unknown", and **tmwell** needs Full Disk Access in the system settings.
+The report then reads "backup state unknown", and **tmreportwell** needs Full Disk Access in the system settings.
 
 # AUTHORS
 
@@ -86,16 +86,16 @@ Manuel Oetiker <manuel@oetiker.ch>
 
 # REPORTING BUGS
 
-<https://github.com/moetiker/TmWell/issues>
+<https://github.com/moetiker/TmReportWell/issues>
 
 # COPYRIGHT
 
 Copyright (c) 2026 Manuel Oetiker.
 Released under the MIT licence, see
-<https://github.com/moetiker/TmWell/blob/main/LICENSE>.
+<https://github.com/moetiker/TmReportWell/blob/main/LICENSE>.
 
 # SEE ALSO
 
-Project home: <https://github.com/moetiker/TmWell>
+Project home: <https://github.com/moetiker/TmReportWell>
 
 **tmutil**(8), **log**(1), **launchctl**(1)
