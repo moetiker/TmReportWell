@@ -4,6 +4,9 @@
 
 ### New
 
+- `tmreportwell config` opens a form for the mail settings and the password, and
+  sends a test mail.
+
 ### Changed
 
 ### Fixed

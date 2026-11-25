@@ -16,6 +16,7 @@ tmreportwell - mail a daily report about Time Machine
 
 # CONFIGURATION
 
+The command **tmreportwell config** edits the configuration in a form.
 The configuration is a JSON file, see **FILES**.
 
 - `smtp_host`: Name of the mail server.
@@ -57,6 +58,9 @@ A report that cannot be mailed is sent by the next run that succeeds.
 
 # OPTIONS
 
+- `config`: Open a form for the settings and the password in the browser.
+  The form is served on 127.0.0.1 until it is closed or unused for 15 minutes.
+  Its test mail does not count as the report of the day.
 - `report`: Print the report. Sends nothing and changes nothing.
 - `html`: Print the report as the HTML page the mail carries. Sends nothing and changes nothing.
 - `run`: Collect new log messages and mail the report if it is due.

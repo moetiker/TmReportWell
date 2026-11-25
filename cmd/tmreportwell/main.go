@@ -93,8 +93,14 @@ func fatal(err error) {
 	os.Exit(1)
 }
 
+func defaultConfig() *Config {
+	return &Config{SMTPPort: 587, SendAt: "09:00", WarnDays: 2, BadDays: 7}
+}
+
+// loadConfig returns what could be read also next to an error, so the form can
+// show it for repair.
 func loadConfig() (*Config, error) {
-	c := &Config{SMTPPort: 587, SendAt: "09:00", WarnDays: 2, BadDays: 7}
+	c := defaultConfig()
 	b, err := os.ReadFile(filepath.Join(dir(), "config.json"))
 	if err != nil {
 		return c, err
@@ -102,15 +108,30 @@ func loadConfig() (*Config, error) {
 	if err := json.Unmarshal(b, c); err != nil {
 		return c, fmt.Errorf("config.json: %w", err)
 	}
-	if _, err := time.Parse("15:04", c.SendAt); err != nil {
-		return c, fmt.Errorf("config.json: send_at must look like 09:00, not %q", c.SendAt)
-	}
-	for k, v := range map[string]string{"smtp_host": c.SMTPHost, "smtp_user": c.SMTPUser, "from": c.From, "to": c.To} {
-		if v == "" {
-			return c, fmt.Errorf("config.json: %s is missing", k)
-		}
+	if err := c.validate(); err != nil {
+		return c, fmt.Errorf("config.json: %w", err)
 	}
 	return c, nil
+}
+
+func saveConfig(c *Config) error {
+	b, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return err
+	}
+	return writeFile("config.json", append(b, '\n'))
+}
+
+// writeFile replaces a file of the program's directory in one step.
+func writeFile(name string, b []byte) error {
+	if err := os.MkdirAll(dir(), 0o700); err != nil {
+		return err
+	}
+	p := filepath.Join(dir(), name)
+	if err := os.WriteFile(p+".new", b, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(p+".new", p)
 }
 
 func loadState(now time.Time) (*State, error) {
@@ -161,14 +182,7 @@ func saveState(s *State) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(dir(), 0o700); err != nil {
-		return err
-	}
-	p := filepath.Join(dir(), "state.json")
-	if err := os.WriteFile(p+".new", b, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(p+".new", p)
+	return writeFile("state.json", b)
 }
 
 // due reports whether today's mail is still to be sent. A mail sent earlier
@@ -304,6 +318,8 @@ func main() {
 	switch cmd {
 	case "--version", "-V":
 		fmt.Println("tmreportwell", version)
+	case "config":
+		err = cmdConfig()
 	case "report":
 		err = cmdReport(false)
 	case "html":
@@ -319,6 +335,7 @@ func main() {
 	default:
 		fmt.Fprint(os.Stderr, `usage: tmreportwell <command>
 
+  config     edit the settings in a form
   report     print the report, change nothing
   html       print the report as the HTML page the mail carries
   run        collect log messages, mail the report if it is due
