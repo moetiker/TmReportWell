@@ -92,6 +92,10 @@ func TestDue(t *testing.T) {
 	if !due("09:00", at("2026-11-24 23:00"), now) || due("09:00", at("2026-11-25 09:10"), now) || due("13:00", at("2026-11-24 13:00"), now) {
 		t.Error("due")
 	}
+	// Sent by hand at 08:00: no second mail at 09:00, the next one tomorrow.
+	if due("09:00", at("2026-11-25 08:00"), now) || !due("09:00", at("2026-11-25 08:00"), at("2026-11-26 09:00")) {
+		t.Error("more or less than one mail per day")
+	}
 }
 
 func TestComposeMail(t *testing.T) {

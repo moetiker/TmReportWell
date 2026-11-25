@@ -51,6 +51,7 @@ WARNING also covers errors in the log, a log that cannot be read, backups that d
 PROBLEM also covers Time Machine preferences that cannot be read, no configured backup disk and no completed backup on record.
 
 The launch agent runs **tmreportwell run** every hour.
+It mails at most one report per day, and a report sent with **tmreportwell send** counts as the report of that day.
 A report that cannot be mailed is sent by the next run that succeeds.
 
 # OPTIONS

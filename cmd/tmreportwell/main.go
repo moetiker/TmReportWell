@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -138,6 +139,23 @@ func loadState(now time.Time) (*State, error) {
 	return s, err
 }
 
+// lock keeps a second tmreportwell waiting. Without it a send by hand during
+// the hourly run mails the same report twice.
+func lock() (*os.File, error) {
+	if err := os.MkdirAll(dir(), 0o700); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(filepath.Join(dir(), "lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return f, nil
+}
+
 func saveState(s *State) error {
 	b, err := json.MarshalIndent(s, "", " ")
 	if err != nil {
@@ -153,14 +171,17 @@ func saveState(s *State) error {
 	return os.Rename(p+".new", p)
 }
 
-// due reports whether today's mail is still to be sent.
+// due reports whether today's mail is still to be sent. A mail sent earlier
+// today, also by hand before send_at, is today's mail.
 func due(sendAt string, lastSent, now time.Time) bool {
 	t, err := time.Parse("15:04", sendAt)
 	if err != nil {
 		return false
 	}
 	slot := time.Date(now.Year(), now.Month(), now.Day(), t.Hour(), t.Minute(), 0, 0, now.Location())
-	return !now.Before(slot) && lastSent.Before(slot)
+	y, m, d := lastSent.In(now.Location()).Date()
+	sentToday := y == now.Year() && m == now.Month() && d == now.Day()
+	return !now.Before(slot) && lastSent.Before(slot) && !sentToday
 }
 
 func report(c *Config, s *State, now time.Time, logErr error) (Report, *TMState) {
@@ -191,6 +212,11 @@ func cmdRun(force bool) error {
 	if err != nil {
 		return err
 	}
+	l, err := lock()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = l.Close() }()
 	now := time.Now()
 	s, err := loadState(now)
 	if err != nil {

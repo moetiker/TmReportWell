@@ -59,7 +59,8 @@ Access.
 ## Commands
 
 - `tmreportwell report`: Print the report. Sends nothing and changes nothing.
-- `tmreportwell run`: Collect new log messages and mail the report if it is due.
+- `tmreportwell run`: Collect new log messages and mail the report if it is due,
+  at most once per day.
 - `tmreportwell send`: Collect new log messages and mail the report now.
 - `tmreportwell install`: Run `tmreportwell run` every hour as a launch agent.
 - `tmreportwell uninstall`: Remove the launch agent.
