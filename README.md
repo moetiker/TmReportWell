@@ -48,21 +48,16 @@ Direct download: <https://github.com/moetiker/TmReportWell/releases/latest>
 
 ## Set up
 
-Create the configuration from
-[config.example.json](config.example.json) and fill in the mail server:
+Enter the mail server, the addresses and the password. The form opens in the
+browser and can send a test mail:
 
 ```sh
-mkdir -p ~/Library/Application\ Support/TmReportWell
-curl -fsSL -o ~/Library/Application\ Support/TmReportWell/config.json https://raw.githubusercontent.com/moetiker/TmReportWell/main/config.example.json
-open -e ~/Library/Application\ Support/TmReportWell/config.json
+tmreportwell config
 ```
 
-Store the SMTP password in the login keychain. The account is the `smtp_user`
-from the configuration, and the command asks for the password:
-
-```sh
-security add-generic-password -s tmreportwell-smtp -a <smtp_user> -w
-```
+The password goes into the login keychain, everything else into
+`~/Library/Application Support/TmReportWell/config.json`. The
+[manual](docs/manual.md#configuration) describes the file.
 
 Send a first report, then install the launch agent:
 
@@ -83,6 +78,7 @@ another installation to Homebrew, run it again as
 
 ## Commands
 
+- `tmreportwell config`: Edit the settings in a form.
 - `tmreportwell report`: Print the report. Sends nothing and changes nothing.
 - `tmreportwell html`: Print the report as the HTML page the mail carries.
 - `tmreportwell run`: Collect new log messages and mail the report if it is due,
