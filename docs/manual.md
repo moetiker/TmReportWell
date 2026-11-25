@@ -47,7 +47,7 @@ The age of the last backup is judged for each disk on its own.
 A backup that is still running appears in a later report if it does not complete.
 A span without log collection that is longer than a day is named in the report.
 
-The subject reads OK, WARNING or PROBLEM.
+The subject starts with "Timemachine Report" and reads OK, WARNING or PROBLEM.
 WARNING also covers errors in the log, a log that cannot be read, backups that did not complete and automatic backups that are switched off.
 PROBLEM also covers Time Machine preferences that cannot be read, no configured backup disk and no completed backup on record.
 

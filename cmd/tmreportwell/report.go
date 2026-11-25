@@ -316,7 +316,7 @@ func buildReport(in reportInput) Report {
 	p := page{Host: in.Host, Level: level, LevelName: levelName[level], Headline: headline,
 		From: stamp(in.From), To: stamp(in.To), Situation: situation, Disks: disks, Done: done, Settings: info, Log: other}
 	return Report{
-		Subject: fmt.Sprintf("[TmReportWell] %s %s: %s", in.Host, levelName[level], headline),
+		Subject: fmt.Sprintf("%s: %s %s, %s", reportTitle, in.Host, levelName[level], headline),
 		Body:    renderText(p, diskInfo),
 		HTML:    renderHTML(p),
 	}
@@ -332,11 +332,25 @@ type page struct {
 	Done, Settings, Log       []string
 }
 
+const (
+	reportTitle = "Timemachine Report"
+	homeURL     = "https://github.com/moetiker/TmReportWell"
+)
+
+// origin says what sent the mail. A build without a release version names none.
+func origin() string {
+	s := "Sent by TmReportWell"
+	if version != "0.0.0" {
+		s += " " + version
+	}
+	return s + ", free software by Manuel Oetiker (MIT licence)"
+}
+
 const nothingDone = "no backup completed in this period"
 
 func renderText(p page, diskInfo []string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Time Machine on %s: %s, %s\n", p.Host, p.LevelName, p.Headline)
+	fmt.Fprintf(&b, "%s\n%s: %s, %s\n", reportTitle, p.Host, p.LevelName, p.Headline)
 	section := func(title string, lines []string) {
 		if len(lines) == 0 {
 			return
@@ -359,5 +373,6 @@ func renderText(p page, diskInfo []string) string {
 	section("Done", done)
 	section("Settings and disks", append(diskInfo, p.Settings...))
 	section("Other log messages", p.Log)
+	fmt.Fprintf(&b, "\n-- \n%s\n%s\n", origin(), homeURL)
 	return b.String()
 }

@@ -75,7 +75,7 @@ func TestReportLevels(t *testing.T) {
 		return buildReport(reportInput{Host: "m", From: now.Add(-24 * time.Hour), PrefsFrom: now.Add(-24 * time.Hour), To: now, WarnDays: 2, BadDays: 7,
 			State: &TMState{AutoBackup: true, Interval: 24 * time.Hour, Dest: []Destination{{Name: "D", Snapshots: []time.Time{last}}}}})
 	}
-	for last, want := range map[string]string{"2026-11-25 03:00": " OK:", "2026-11-22 09:00": " WARNING:", "2026-11-08 09:00": " PROBLEM:"} {
+	for last, want := range map[string]string{"2026-11-25 03:00": " OK,", "2026-11-22 09:00": " WARNING,", "2026-11-08 09:00": " PROBLEM,"} {
 		if r := mk(at(last)); !strings.Contains(r.Subject, want) {
 			t.Errorf("last %s: %s", last, r.Subject)
 		}
@@ -84,7 +84,7 @@ func TestReportLevels(t *testing.T) {
 		t.Error(r.Body)
 	}
 	r := buildReport(reportInput{Host: "m", From: now, To: now, StateErr: io.ErrUnexpectedEOF})
-	if !strings.Contains(r.Subject, "PROBLEM: backup state unknown") {
+	if !strings.Contains(r.Subject, "PROBLEM, backup state unknown") {
 		t.Error(r.Subject)
 	}
 }
@@ -170,7 +170,7 @@ func TestLogGap(t *testing.T) {
 	now := at("2026-11-23 11:00")
 	r := buildReport(reportInput{To: now, Gaps: s.Gaps, WarnDays: 2, BadDays: 7, State: &TMState{AutoBackup: true, RunningKnown: true,
 		Dest: []Destination{{Name: "D", Snapshots: []time.Time{now}}}}})
-	if !strings.Contains(r.Body, "may be missing") || !strings.Contains(r.Subject, " OK:") {
+	if !strings.Contains(r.Body, "may be missing") || !strings.Contains(r.Subject, " OK,") {
 		t.Errorf("%s\n%s", r.Subject, r.Body)
 	}
 }
@@ -179,7 +179,7 @@ func TestStaleDiskNotHidden(t *testing.T) {
 	now := at("2026-11-25 09:00")
 	r := buildReport(reportInput{Host: "m", To: now, WarnDays: 2, BadDays: 7, State: &TMState{AutoBackup: true, RunningKnown: true,
 		Dest: []Destination{{Name: "New", Snapshots: []time.Time{now}}, {Name: "Old", Snapshots: []time.Time{at("2026-10-01 09:00")}}}}})
-	if !strings.Contains(r.Subject, `PROBLEM: "Old" last backup 55 days ago`) {
+	if !strings.Contains(r.Subject, `PROBLEM, "Old" last backup 55 days ago`) {
 		t.Error(r.Subject)
 	}
 }
@@ -244,7 +244,8 @@ func TestHTMLMail(t *testing.T) {
 	if strings.Contains(r.HTML, "<b>D") || !strings.Contains(r.HTML, "&lt;b&gt;D&amp;") {
 		t.Error("the disk name is not escaped")
 	}
-	if !strings.Contains(r.HTML, levelColor[levelBad]) || !strings.Contains(r.HTML, "100% full") || strings.Contains(r.HTML, "ZgotmplZ") {
+	if !strings.Contains(r.HTML, levelColor[levelBad]) || !strings.Contains(r.HTML, "100% full") || strings.Contains(r.HTML, "ZgotmplZ") ||
+		!strings.Contains(r.HTML, `href="`+homeURL+`"`) || !strings.Contains(r.Body, homeURL) || !strings.HasPrefix(r.Subject, "Timemachine Report: m PROBLEM") {
 		t.Error(r.HTML)
 	}
 	b, err := composeMail("a@example.com", "b@example.com", r, now)
