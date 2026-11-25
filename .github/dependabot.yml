@@ -18,3 +18,10 @@ updates:
     labels:
       - dependencies
       - no-changelog
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+      - no-changelog
