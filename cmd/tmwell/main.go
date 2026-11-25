@@ -26,11 +26,57 @@ type Config struct {
 	BadDays  float64 `json:"problem_days"`
 }
 
+// logRetention is how long macOS kept Time Machine messages on macOS 27.2.
+const logRetention = 24 * time.Hour
+
+// Gap is a time span whose log messages may be lost.
+type Gap struct {
+	From time.Time `json:"from"`
+	To   time.Time `json:"to"`
+}
+
 // State survives between the hourly runs.
 type State struct {
-	Cursor   time.Time         `json:"cursor"`    // newest log event already collected
-	LastSent time.Time         `json:"last_sent"` // end of the last mailed period
-	Groups   map[string]*Group `json:"groups"`
+	Cursor       time.Time         `json:"cursor"`        // newest log event already collected
+	Collected    time.Time         `json:"collected"`     // last successful collection
+	LastSent     time.Time         `json:"last_sent"`     // end of the last mailed period
+	PrefsFrom    time.Time         `json:"prefs_from"`    // completed backups after this are unreported
+	AttemptsFrom time.Time         `json:"attempts_from"` // started backups after this are unresolved
+	Gaps         []Gap             `json:"gaps,omitempty"`
+	Groups       map[string]*Group `json:"groups"`
+}
+
+// noteGap records a span the collector slept through for longer than macOS
+// keeps the messages.
+func (s *State) noteGap(now time.Time) {
+	if !s.Collected.IsZero() && now.Sub(s.Collected) > logRetention {
+		s.Gaps = append(s.Gaps, Gap{s.Collected, now.Add(-logRetention)})
+	}
+	s.Collected = now
+}
+
+func (s *State) collect(now time.Time) error {
+	newest, err := collectLog(s.Cursor, s.Groups)
+	if err != nil {
+		return err
+	}
+	s.Cursor = newest
+	s.noteGap(now)
+	return nil
+}
+
+// markSent starts the next period. What the sent report could not settle stays
+// open: everything when the preferences were unreadable, and an attempt that
+// was still running.
+func (s *State) markSent(now time.Time, st *TMState) {
+	if st != nil {
+		open, ok := openAttempt(st, s.AttemptsFrom, now)
+		s.PrefsFrom, s.AttemptsFrom = now, now
+		if ok {
+			s.AttemptsFrom = open.Add(-time.Second)
+		}
+	}
+	s.LastSent, s.Groups, s.Gaps = now, map[string]*Group{}, nil
 }
 
 func dir() string {
@@ -83,6 +129,12 @@ func loadState(now time.Time) (*State, error) {
 	if s.LastSent.IsZero() {
 		s.LastSent = now.Add(-24 * time.Hour)
 	}
+	if s.PrefsFrom.IsZero() {
+		s.PrefsFrom = s.LastSent
+	}
+	if s.AttemptsFrom.IsZero() {
+		s.AttemptsFrom = s.LastSent
+	}
 	return s, err
 }
 
@@ -111,10 +163,11 @@ func due(sendAt string, lastSent, now time.Time) bool {
 	return !now.Before(slot) && lastSent.Before(slot)
 }
 
-func report(c *Config, s *State, now time.Time, logErr error) Report {
+func report(c *Config, s *State, now time.Time, logErr error) (Report, *TMState) {
 	st, err := readTMState()
-	return buildReport(reportInput{Host: hostname(), From: s.LastSent, To: now, State: st, StateErr: err,
-		LogErr: logErr, Groups: s.Groups, WarnDays: c.WarnDays, BadDays: c.BadDays})
+	return buildReport(reportInput{Host: hostname(), From: s.LastSent, To: now, PrefsFrom: s.PrefsFrom,
+		AttemptsFrom: s.AttemptsFrom, State: st, StateErr: err, LogErr: logErr, Gaps: s.Gaps, Groups: s.Groups,
+		WarnDays: c.WarnDays, BadDays: c.BadDays}), st
 }
 
 func cmdReport() error {
@@ -127,8 +180,8 @@ func cmdReport() error {
 	if err != nil {
 		return err
 	}
-	_, logErr := collectLog(s.Cursor, s.Groups)
-	r := report(c, s, now, logErr)
+	logErr := s.collect(now)
+	r, _ := report(c, s, now, logErr)
 	fmt.Printf("Subject: %s\n\n%s", r.Subject, r.Body)
 	return nil
 }
@@ -143,8 +196,7 @@ func cmdRun(force bool) error {
 	if err != nil {
 		return err
 	}
-	var logErr error
-	s.Cursor, logErr = collectLog(s.Cursor, s.Groups)
+	logErr := s.collect(now)
 	// Saved before mailing: the log drops these messages after about a day, so
 	// they must outlive a mail server that stays unreachable for longer.
 	if err := saveState(s); err != nil {
@@ -153,10 +205,11 @@ func cmdRun(force bool) error {
 	if !force && !due(c.SendAt, s.LastSent, now) {
 		return logErr
 	}
-	if err := sendMail(c, report(c, s, now, logErr)); err != nil {
+	r, st := report(c, s, now, logErr)
+	if err := sendMail(c, r); err != nil {
 		return fmt.Errorf("sending mail: %w", err)
 	}
-	s.LastSent, s.Groups = now, map[string]*Group{}
+	s.markSent(now, st)
 	return saveState(s)
 }
 

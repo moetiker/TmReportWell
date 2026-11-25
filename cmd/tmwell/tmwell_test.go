@@ -36,12 +36,8 @@ func TestDecodeAndUnfinished(t *testing.T) {
 		t.Fatalf("%+v", st)
 	}
 	d := st.Dest[0]
-	if got := unfinished(d, at("2026-09-01 00:00"), at("2026-12-01 00:00"), false); len(got) != 2 {
+	if got := unfinished(d, at("2026-09-01 00:00"), at("2026-12-01 00:00"), time.Time{}); len(got) != 2 {
 		t.Errorf("unfinished = %v, want the two September attempts", got)
-	}
-	d.Snapshots = nil
-	if got := unfinished(d, at("2026-10-01 00:00"), at("2026-12-01 00:00"), true); len(got) != 0 {
-		t.Errorf("running backup reported as unfinished: %v", got)
 	}
 }
 
@@ -74,7 +70,7 @@ func TestParseLog(t *testing.T) {
 func TestReportLevels(t *testing.T) {
 	now := at("2026-11-25 09:00")
 	mk := func(last time.Time) Report {
-		return buildReport(reportInput{Host: "m", From: now.Add(-24 * time.Hour), To: now, WarnDays: 2, BadDays: 7,
+		return buildReport(reportInput{Host: "m", From: now.Add(-24 * time.Hour), PrefsFrom: now.Add(-24 * time.Hour), To: now, WarnDays: 2, BadDays: 7,
 			State: &TMState{AutoBackup: true, Interval: 24 * time.Hour, Dest: []Destination{{Name: "D", Snapshots: []time.Time{last}}}}})
 	}
 	for last, want := range map[string]string{"2026-11-25 03:00": " OK:", "2026-11-22 09:00": " WARNING:", "2026-11-08 09:00": " PROBLEM:"} {
@@ -110,5 +106,117 @@ func TestComposeMail(t *testing.T) {
 	body, _ := io.ReadAll(quotedprintable.NewReader(m.Body))
 	if !strings.Contains(string(body), "grün") {
 		t.Errorf("%q", body)
+	}
+}
+
+func ptr(b bool) *bool { return &b }
+
+// A backup that runs while the mail goes out and fails afterwards shows up in
+// the next report.
+func TestAbortAfterReport(t *testing.T) {
+	start, first, second := at("2026-11-24 08:30"), at("2026-11-24 09:00"), at("2026-11-25 09:00")
+	st := &TMState{AutoBackup: true, Running: true, RunningKnown: true, Dest: []Destination{
+		{Name: "A", Attempts: []time.Time{start}},
+		{Name: "B", Attempts: []time.Time{at("2026-11-24 07:00")}},
+	}}
+	s := &State{LastSent: at("2026-11-23 09:00"), PrefsFrom: at("2026-11-23 09:00"), AttemptsFrom: at("2026-11-23 09:00")}
+	rep := func(now time.Time) string {
+		return buildReport(reportInput{From: s.LastSent, To: now, PrefsFrom: s.PrefsFrom, AttemptsFrom: s.AttemptsFrom,
+			State: st, WarnDays: 2, BadDays: 7}).Body
+	}
+	body := rep(first)
+	if strings.Contains(body, `started on "A"`) || !strings.Contains(body, `started on "B" but did not complete`) {
+		t.Errorf("only B has failed so far:\n%s", body)
+	}
+	s.markSent(first, st)
+	st.Running = false
+	body = rep(second)
+	if !strings.Contains(body, `started on "A" but did not complete`) || strings.Contains(body, `started on "B"`) {
+		t.Errorf("A must be reported now, B not again:\n%s", body)
+	}
+	s.markSent(second, st)
+	if body = rep(at("2026-11-26 09:00")); strings.Contains(body, "did not complete") {
+		t.Errorf("reported twice:\n%s", body)
+	}
+}
+
+// Unreadable preferences leave the period open for backups.
+func TestMarkSentWithoutPrefs(t *testing.T) {
+	old := at("2026-11-23 09:00")
+	s := &State{PrefsFrom: old, AttemptsFrom: old, Gaps: []Gap{{old, old}}}
+	s.markSent(at("2026-11-24 09:00"), nil)
+	if !s.PrefsFrom.Equal(old) || !s.AttemptsFrom.Equal(old) || s.Gaps != nil {
+		t.Errorf("%+v", s)
+	}
+}
+
+func TestLogGap(t *testing.T) {
+	s := &State{}
+	s.noteGap(at("2026-11-20 09:00"))
+	s.noteGap(at("2026-11-21 08:00"))
+	if len(s.Gaps) != 0 {
+		t.Fatalf("unexpected gap: %v", s.Gaps)
+	}
+	s.noteGap(at("2026-11-23 10:00"))
+	if len(s.Gaps) != 1 || !s.Gaps[0].To.Equal(at("2026-11-22 10:00")) {
+		t.Fatalf("%v", s.Gaps)
+	}
+	now := at("2026-11-23 11:00")
+	r := buildReport(reportInput{To: now, Gaps: s.Gaps, WarnDays: 2, BadDays: 7, State: &TMState{AutoBackup: true, RunningKnown: true,
+		Dest: []Destination{{Name: "D", Snapshots: []time.Time{now}}}}})
+	if !strings.Contains(r.Body, "may be missing") || !strings.Contains(r.Subject, " OK:") {
+		t.Errorf("%s\n%s", r.Subject, r.Body)
+	}
+}
+
+func TestStaleDiskNotHidden(t *testing.T) {
+	now := at("2026-11-25 09:00")
+	r := buildReport(reportInput{Host: "m", To: now, WarnDays: 2, BadDays: 7, State: &TMState{AutoBackup: true, RunningKnown: true,
+		Dest: []Destination{{Name: "New", Snapshots: []time.Time{now}}, {Name: "Old", Snapshots: []time.Time{at("2026-10-01 09:00")}}}}})
+	if !strings.Contains(r.Subject, `PROBLEM: "Old" last backup 55 days ago`) {
+		t.Error(r.Subject)
+	}
+}
+
+func TestSituation(t *testing.T) {
+	now := at("2026-11-25 13:00")
+	groups := map[string]*Group{}
+	for _, e := range []struct{ when, msg string }{
+		{"2026-11-25 11:05:48.945000+0100", "Computer is on battery power"},
+		{"2026-11-25 11:35:40.000000+0100", "Autobackup interval is 24 hours but only 0.5 hours have elapsed since last auto backup attempt at 2026-11-25 10:05:18 +0000"},
+	} {
+		ts, err := time.Parse(logTime, e.when)
+		if err != nil {
+			t.Fatal(err)
+		}
+		kind, text, _ := classify("Info", skipPrefix+e.msg)
+		addEvent(groups, kind, text, ts)
+	}
+	st := &TMState{AutoBackup: true, RequiresAC: true, Interval: 24 * time.Hour, RunningKnown: true, OnBattery: ptr(true),
+		Dest: []Destination{{Name: "D", Attached: ptr(false), Snapshots: []time.Time{at("2026-11-08 13:32")}}}}
+	in := reportInput{From: now.Add(-24 * time.Hour), To: now, Groups: groups, State: st, WarnDays: 2, BadDays: 7}
+	body := buildReport(in).Body
+	next := time.Date(2026, 11, 26, 10, 5, 18, 0, time.UTC)
+	for _, want := range []string{
+		`"D" is not connected`, "runs on battery", "was skipped (Computer is on battery power)",
+		"does not try again by itself before " + stamp(next),
+		`Connect the disk "D".`, "Connect the power adapter.", "Back Up Now",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q in\n%s", want, body)
+		}
+	}
+	// Nothing to do while backups are fresh, and no claim about unknown facts.
+	st.Dest[0].Snapshots, st.Dest[0].Attached, st.OnBattery = []time.Time{now}, nil, nil
+	body = buildReport(in).Body
+	if !strings.Contains(body, "What to do\n  - nothing") || strings.Contains(body, "not connected") || strings.Contains(body, "on battery, and") {
+		t.Error(body)
+	}
+}
+
+func TestLocalSnaps(t *testing.T) {
+	got := parseLocalSnaps("Snapshots for disk /:\ncom.apple.TimeMachine.2026-11-21-100551.local\ncom.apple.TimeMachine.2026-11-08-104558.local\n")
+	if len(got) != 2 || got[0].Day() != 8 {
+		t.Error(got)
 	}
 }

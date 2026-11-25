@@ -40,6 +40,11 @@ Backups come from the Time Machine preferences.
 Log messages of **backupd** and **backupd-helper** that differ only in numbers are grouped.
 A message that **tmwell** does not recognise appears verbatim in the report.
 
+The report opens with the situation in plain sentences and the steps that remain to be done.
+The age of the last backup is judged for each disk on its own.
+A backup that is still running appears in a later report if it does not complete.
+A span without log collection that is longer than a day is named in the report.
+
 The subject reads OK, WARNING or PROBLEM.
 WARNING also covers errors in the log, a log that cannot be read, backups that did not complete and automatic backups that are switched off.
 PROBLEM also covers Time Machine preferences that cannot be read, no configured backup disk and no completed backup on record.
