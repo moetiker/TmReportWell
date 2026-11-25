@@ -14,9 +14,6 @@ import (
 
 const agentLabel = "tmwell"
 
-// version is set by the release build with -ldflags -X.
-var version = "dev"
-
 // Config is read from config.json.
 type Config struct {
 	SMTPHost string  `json:"smtp_host"`
@@ -201,7 +198,8 @@ func cmdInstall() error {
 	if err := os.WriteFile(agentPath(), []byte(pl), 0o644); err != nil {
 		return err
 	}
-	exec.Command("/bin/launchctl", "bootout", launchDomain()+"/"+agentLabel).Run()
+	// bootout fails when the agent is not loaded, which is fine here.
+	_ = exec.Command("/bin/launchctl", "bootout", launchDomain()+"/"+agentLabel).Run()
 	if _, err := run(30*time.Second, "/bin/launchctl", "bootstrap", launchDomain(), agentPath()); err != nil {
 		return err
 	}
@@ -210,7 +208,8 @@ func cmdInstall() error {
 }
 
 func cmdUninstall() error {
-	exec.Command("/bin/launchctl", "bootout", launchDomain()+"/"+agentLabel).Run()
+	// bootout fails when the agent is not loaded, which is fine here.
+	_ = exec.Command("/bin/launchctl", "bootout", launchDomain()+"/"+agentLabel).Run()
 	return os.Remove(agentPath())
 }
 
@@ -241,6 +240,7 @@ func main() {
   send       collect log messages, mail the report now
   install    run hourly as a launch agent
   uninstall  remove the launch agent
+  --version  print the version
 `)
 		os.Exit(2)
 	}

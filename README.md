@@ -1,15 +1,23 @@
 # TmWell
 
+[![CI](https://github.com/moetiker/TmWell/actions/workflows/ci.yml/badge.svg)](https://github.com/moetiker/TmWell/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/moetiker/TmWell)](https://github.com/moetiker/TmWell/releases/latest)
+
 TmWell mails one report per day about Time Machine on a Mac: which backups
-completed, which did not run, and the reason the system log gives.
+completed, which did not run, and the reason the system log gives. The
+[manual](docs/manual.md) has the details.
 
 ## Install
 
-Build the program:
+mise:
 
 ```sh
-go install ./cmd/tmwell
+mise use -g github:moetiker/TmWell
 ```
+
+Direct download: <https://github.com/moetiker/TmWell/releases/latest>
+
+## Set up
 
 Create the configuration and fill in the mail server:
 
@@ -29,12 +37,12 @@ security add-generic-password -s tmwell-smtp -a <smtp_user> -w
 Send a first report, then install the launch agent:
 
 ```sh
-~/go/bin/tmwell send
-~/go/bin/tmwell install
+tmwell send
+tmwell install
 ```
 
 If the mailed report says that the Time Machine preferences could not be read,
-add `~/go/bin/tmwell` under System Settings, Privacy & Security, Full Disk
+add `tmwell` under System Settings, Privacy & Security, Full Disk
 Access.
 
 ## Commands
@@ -44,6 +52,7 @@ Access.
 - `tmwell send`: Collect new log messages and mail the report now.
 - `tmwell install`: Run `tmwell run` every hour as a launch agent.
 - `tmwell uninstall`: Remove the launch agent.
+- `tmwell --version`: Print the version.
 
 ## Configuration
 

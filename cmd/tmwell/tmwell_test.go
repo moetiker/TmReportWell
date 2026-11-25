@@ -63,7 +63,9 @@ func TestParseLog(t *testing.T) {
 		t.Fatalf("%+v", g)
 	}
 	// Reading the same stream again from the cursor adds nothing.
-	parseLog(strings.NewReader(in), newest, g)
+	if _, err := parseLog(strings.NewReader(in), newest, g); err != nil {
+		t.Fatal(err)
+	}
 	if g[groupKey(kindSkip, "Computer is on battery power")].Count != 2 {
 		t.Error("events counted twice")
 	}

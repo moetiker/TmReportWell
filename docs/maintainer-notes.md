@@ -12,3 +12,7 @@ Observed on macOS 27.2.
   No backup ran while the patterns were written, so the messages of a running
   backup are unknown. Anything unrecognised is shown verbatim.
 - The last line of `log show --style ndjson` is a trailer without a timestamp.
+- Releases carry macOS archives only. The program compiles for other systems but
+  depends on tmutil, the unified log and launchd.
+- The binary lives in `cmd/tmwell` because `go install` names a program after
+  its last path element, and the repository is called TmWell.

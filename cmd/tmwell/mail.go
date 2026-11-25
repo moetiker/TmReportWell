@@ -76,8 +76,10 @@ func sendMail(c *Config, r Report) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
-	conn.SetDeadline(time.Now().Add(2 * time.Minute))
+	defer func() { _ = conn.Close() }()
+	if err := conn.SetDeadline(time.Now().Add(2 * time.Minute)); err != nil {
+		return err
+	}
 	tc := &tls.Config{ServerName: c.SMTPHost}
 	if c.SMTPPort == 465 {
 		conn = tls.Client(conn, tc)
@@ -86,7 +88,7 @@ func sendMail(c *Config, r Report) error {
 	if err != nil {
 		return err
 	}
-	defer cl.Close()
+	defer func() { _ = cl.Close() }()
 	if c.SMTPPort != 465 {
 		// No fallback to plain text: StartTLS fails when the server lacks it.
 		if err := cl.StartTLS(tc); err != nil {
@@ -114,6 +116,6 @@ func sendMail(c *Config, r Report) error {
 	if err := w.Close(); err != nil {
 		return err
 	}
-	cl.Quit()
+	_ = cl.Quit()
 	return nil
 }
