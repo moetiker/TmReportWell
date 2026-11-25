@@ -13,7 +13,8 @@
   ],
   "release_assets": [
     "tmreportwell-*-x86_64-apple-darwin.tar.gz",
-    "tmreportwell-*-aarch64-apple-darwin.tar.gz"
+    "tmreportwell-*-aarch64-apple-darwin.tar.gz",
+    "tmreportwell-*.bottle.tar.gz"
   ],
   "exceptions": {
     "native-targets": "the program reads Time Machine through tmutil, the unified log and launchd, which exist only on macOS",

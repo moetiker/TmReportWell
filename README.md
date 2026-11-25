@@ -29,7 +29,8 @@ Direct download: <https://github.com/moetiker/TmReportWell/releases/latest>
 
 ## Set up
 
-Create the configuration and fill in the mail server:
+Create the configuration from
+[config.example.json](config.example.json) and fill in the mail server:
 
 ```sh
 mkdir -p ~/Library/Application\ Support/TmReportWell

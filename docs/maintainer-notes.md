@@ -22,5 +22,6 @@ Observed on macOS 27.2.
 - `tmreportwell install` writes the path it was called by into the launch agent.
   A resolved path would name the versioned Cellar directory, which
   `brew upgrade` removes.
-- The formula installs the release archives and has no bottle. The release job
-  is in this repository because `ri-release-homebrew` needs Linux archives.
+- The formula names its two macOS urls at the top level and not in `on_macos`.
+  Homebrew needs a url on every platform, or each `brew` command that loads the
+  formula fails on Linux.
