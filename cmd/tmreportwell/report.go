@@ -131,7 +131,7 @@ func buildReport(in reportInput) Report {
 		}
 	}
 	var headline string
-	var situation, todo, done, notDone, info, other []string
+	var situation, done, info, other []string
 
 	byKind := map[string][]*Group{}
 	for _, g := range in.Groups {
@@ -141,18 +141,16 @@ func buildReport(in reportInput) Report {
 		sort.Slice(gs, func(i, j int) bool { return gs[i].First.Before(gs[j].First) })
 	}
 
+	told := "" // the skip reason the situation already names
 	if in.State == nil {
 		raise(levelBad)
 		headline = "backup state unknown"
-		situation = append(situation, "It is not known whether backups work: the Time Machine preferences could not be read.")
-		todo = append(todo, "Give tmreportwell Full Disk Access in System Settings, Privacy & Security.")
-		notDone = append(notDone, fmt.Sprintf("Time Machine preferences could not be read: %v", in.StateErr))
+		situation = append(situation, fmt.Sprintf("It is not known whether backups work: the Time Machine preferences could not be read (%v). tmreportwell may need Full Disk Access in System Settings, Privacy & Security.", in.StateErr))
 	} else {
 		st := in.State
 		open, isOpen := openAttempt(st, in.AttemptsFrom, in.To)
 		running := st.RunningKnown && st.Running
 		worst, completed := -1.0, 0
-		anyStale := false
 		for _, d := range st.Dest {
 			for _, s := range d.Snapshots {
 				if s.After(in.PrefsFrom) && !s.After(in.To) {
@@ -162,7 +160,7 @@ func buildReport(in reportInput) Report {
 			}
 			for _, a := range unfinished(d, in.AttemptsFrom, in.To, open) {
 				raise(levelWarn)
-				notDone = append(notDone, fmt.Sprintf("%s  backup started on %q but did not complete", stamp(a), d.Name))
+				situation = append(situation, fmt.Sprintf("The backup started %s on %q did not complete.", stamp(a), d.Name))
 			}
 			line := fmt.Sprintf("%q: %s free, %s used", d.Name, gb(d.Free), gb(d.Used))
 			info = append(info, line)
@@ -183,7 +181,6 @@ func buildReport(in reportInput) Report {
 				}
 			}
 			stale := days >= in.WarnDays
-			anyStale = anyStale || stale
 			if days >= in.BadDays {
 				raise(levelBad)
 			} else if stale {
@@ -191,16 +188,12 @@ func buildReport(in reportInput) Report {
 			}
 			if no(d.Attached) {
 				situation = append(situation, fmt.Sprintf("%q is not connected at the time of this report.", d.Name))
-				if stale && !running {
-					todo = append(todo, fmt.Sprintf("Connect the disk %q.", d.Name))
-				}
 			}
 		}
 		if len(st.Dest) == 0 {
 			raise(levelBad)
 			headline = "no backup disk configured"
 			situation = append(situation, "No backup disk is configured.")
-			todo = append(todo, "Add a backup disk in System Settings, General, Time Machine.")
 		} else if completed == 0 && !running {
 			situation = append(situation, "No backup completed since the last report.")
 		}
@@ -213,23 +206,17 @@ func buildReport(in reportInput) Report {
 		if !st.AutoBackup {
 			raise(levelWarn)
 			situation = append(situation, "Automatic backups are switched off.")
-			todo = append(todo, "Switch automatic backups on in System Settings, General, Time Machine.")
 		}
 		if st.RequiresAC && yes(st.OnBattery) {
 			situation = append(situation, "The Mac runs on battery, and automatic backups need AC power.")
-			if anyStale && !running {
-				todo = append(todo, "Connect the power adapter.")
-			}
 		}
 		if attempt, next, skipped := nextAttempt(st, byKind[kindNotDue], byKind[kindSkip]); st.AutoBackup && !running && next.After(in.To) {
 			s := fmt.Sprintf("macOS does not try again by itself before %s.", stamp(next))
 			if skipped != "" {
+				told = skipped
 				s = fmt.Sprintf("The attempt of %s was skipped (%s). %s", stamp(attempt), skipped, s)
 			}
 			situation = append(situation, s)
-		}
-		if anyStale && !running && len(st.Dest) > 0 {
-			todo = append(todo, "Choose Back Up Now in the Time Machine menu.")
 		}
 		s := "Automatic backups: every " + age(st.Interval)
 		if st.Interval == 0 {
@@ -251,20 +238,9 @@ func buildReport(in reportInput) Report {
 		return fmt.Sprintf("%s to %s, %d times", stamp(g.First), stamp(g.Last), g.Count)
 	}
 	for _, g := range byKind[kindSkip] {
-		notDone = append(notDone, fmt.Sprintf("Backup skipped: %s (%s)", g.Text, span(g)))
-	}
-	for _, g := range byKind[kindNoDisk] {
-		name := strings.TrimPrefix(g.Text, "backup disk not mounted ")
-		if in.State != nil {
-			for _, d := range in.State.Dest {
-				for _, u := range d.UUIDs {
-					if u == name {
-						name = fmt.Sprintf("%q", d.Name)
-					}
-				}
-			}
+		if g.Text != told {
+			situation = append(situation, fmt.Sprintf("Backups were skipped: %s (%s).", g.Text, span(g)))
 		}
-		notDone = append(notDone, fmt.Sprintf("Backup disk %s not mounted (%s)", name, span(g)))
 	}
 	if n := len(byKind[kindProblem]); n > 0 {
 		raise(levelWarn)
@@ -293,8 +269,7 @@ func buildReport(in reportInput) Report {
 	}
 	if in.LogErr != nil {
 		raise(levelWarn)
-		situation = append(situation, "The system log could not be read, so reasons for skipped backups may be missing.")
-		notDone = append(notDone, fmt.Sprintf("The system log could not be read: %v", in.LogErr))
+		situation = append(situation, fmt.Sprintf("The system log could not be read, so reasons for skipped backups may be missing: %v", in.LogErr))
 	}
 	for _, g := range in.Gaps {
 		situation = append(situation, fmt.Sprintf("Log messages from %s to %s may be missing: tmreportwell did not run, and macOS keeps them for about a day.", stamp(g.From), stamp(g.To)))
@@ -315,10 +290,8 @@ func buildReport(in reportInput) Report {
 		}
 	}
 	section("Situation", situation, "")
-	section("What to do", todo, "nothing")
 	fmt.Fprintf(&b, "\nDetails for %s to %s\n", stamp(in.From), stamp(in.To))
 	section("Done", done, "no backup completed in this period")
-	section("Not done", notDone, "nothing to report")
 	section("Settings and disks", info, "")
 	section("Other log messages", other, "")
 	return Report{

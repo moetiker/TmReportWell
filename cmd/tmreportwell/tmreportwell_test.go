@@ -125,13 +125,13 @@ func TestAbortAfterReport(t *testing.T) {
 			State: st, WarnDays: 2, BadDays: 7}).Body
 	}
 	body := rep(first)
-	if strings.Contains(body, `started on "A"`) || !strings.Contains(body, `started on "B" but did not complete`) {
+	if strings.Contains(body, `on "A" did not`) || !strings.Contains(body, `on "B" did not complete`) {
 		t.Errorf("only B has failed so far:\n%s", body)
 	}
 	s.markSent(first, st)
 	st.Running = false
 	body = rep(second)
-	if !strings.Contains(body, `started on "A" but did not complete`) || strings.Contains(body, `started on "B"`) {
+	if !strings.Contains(body, `on "A" did not complete`) || strings.Contains(body, `on "B" did not`) {
 		t.Errorf("A must be reported now, B not again:\n%s", body)
 	}
 	s.markSent(second, st)
@@ -200,16 +200,26 @@ func TestSituation(t *testing.T) {
 	for _, want := range []string{
 		`"D" is not connected`, "runs on battery", "was skipped (Computer is on battery power)",
 		"does not try again by itself before " + stamp(next),
-		`Connect the disk "D".`, "Connect the power adapter.", "Back Up Now",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("missing %q in\n%s", want, body)
 		}
 	}
-	// Nothing to do while backups are fresh, and no claim about unknown facts.
+	for _, gone := range []string{"What to do", "Not done", "Backups were skipped"} {
+		if strings.Contains(body, gone) {
+			t.Errorf("%q does not belong in\n%s", gone, body)
+		}
+	}
+	// A skip that the next attempt no longer explains is still told.
+	in.To = at("2026-11-26 13:00")
+	if body = buildReport(in).Body; !strings.Contains(body, "Backups were skipped: Computer is on battery power") {
+		t.Error(body)
+	}
+	in.To = now
+	// No claim about unknown facts.
 	st.Dest[0].Snapshots, st.Dest[0].Attached, st.OnBattery = []time.Time{now}, nil, nil
 	body = buildReport(in).Body
-	if !strings.Contains(body, "What to do\n  - nothing") || strings.Contains(body, "not connected") || strings.Contains(body, "on battery, and") {
+	if strings.Contains(body, "not connected") || strings.Contains(body, "on battery, and") {
 		t.Error(body)
 	}
 }
